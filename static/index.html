@@ -145,8 +145,9 @@ async function refreshHealth() {
   let j;
   try { j = await (await fetch('/healthz')).json(); }
   catch { setPill('loading', 'connecting…'); return; }
+  const leftMin = j.idle_s != null ? Math.ceil((3600 - j.idle_s) / 60) : null;
   setPill(j.status, j.status === 'ready'
-      ? 'ready'
+      ? (leftMin != null && leftMin <= 35 ? `ready · parks in ${Math.max(0, leftMin)}m` : 'ready')
       : `${j.status} — ${j.detail || ''}`);
   ready = j.status === 'ready';
   updateGo();

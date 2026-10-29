@@ -20,6 +20,10 @@ LORA_FILE = "qwen-image-edit-plus-nsfw-lora.safetensors"
 AUTH_USER = os.environ.get("QEDIT_USER", "russell")
 AUTH_PASS = os.environ.get("QEDIT_PASS", "changeme")
 
+PARK_AFTER_S = int(os.environ.get("QEDIT_PARK_AFTER_S", "3600"))
+POD_ID = os.environ.get("POD_ID") or os.environ.get("QEDIT_POD_ID", "")
+RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY", "")
+
 MAX_SIDE = 1328   # native working resolution for Qwen-Image-Edit
 MAX_IMAGES = 4    # pipeline accepts multiple reference images
 MAX_JOBS_KEPT = 24
@@ -27,11 +31,40 @@ MAX_JOBS_KEPT = 24
 app = FastAPI(title="qedit")
 security = HTTPBasic()
 
-_state = {"status": "loading", "detail": "starting up", "boot": time.time()}
+_state = {"status": "loading", "detail": "starting up", "boot": time.time(), "last_active": time.time()}
 _pipe = None
 _gpu_lock = threading.Lock()
 _jobs = {}
 _jobs_lock = threading.Lock()
+
+
+def _touch():
+    """Any UI request or edit job marks the pod as in-use (resets the auto-park timer)."""
+    _state["last_active"] = time.time()
+
+
+def _park_watchdog():
+    """Stop the pod via the RunPod API after PARK_AFTER_S with no UI/job activity."""
+    import urllib.request
+    while True:
+        time.sleep(60)
+        try:
+            if _state["status"] != "ready" or not (RUNPOD_API_KEY and POD_ID):
+                continue
+            idle = time.time() - _state["last_active"]
+            if idle < PARK_AFTER_S:
+                continue
+            _state.update(status="parking", detail=f"idle {idle / 60:.0f} min — stopping pod")
+            req = urllib.request.Request(
+                f"https://rest.runpod.io/v1/pods/{POD_ID}/stop",
+                method="POST",
+                headers={"Authorization": f"Bearer {RUNPOD_API_KEY}"},
+                data=b"",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                _state.update(detail=f"park requested (HTTP {resp.status}) — see you soon")
+        except Exception as e:  # noqa: BLE001
+            _state.update(detail=f"park attempt failed, retrying: {e!r}"[:200])
 
 
 def _require_auth(creds: HTTPBasicCredentials = Depends(security)):
@@ -59,7 +92,9 @@ def _load_model():
 
 @app.on_event("startup")
 def _startup():
+    _touch()
     threading.Thread(target=_load_model, daemon=True).start()
+    threading.Thread(target=_park_watchdog, daemon=True).start()
 
 
 def _prep(img: Image.Image) -> Image.Image:
@@ -116,16 +151,19 @@ def _run_job(job, images, prompt, negative_prompt, steps, cfg, lora_scale, seed)
 
 @app.get("/")
 def index(_: None = Depends(_require_auth)):
+    _touch()
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 
 @app.get("/healthz")
 def healthz(_: None = Depends(_require_auth)):
+    _touch()
     return {
         "status": _state["status"],
         "detail": _state["detail"],
         "gpu_busy": _gpu_lock.locked(),
         "uptime_s": round(time.time() - _state["boot"]),
+        "idle_s": round(time.time() - _state["last_active"]),
     }
 
 
@@ -151,6 +189,7 @@ async def edit(
 ):
     if _state["status"] != "ready":
         raise HTTPException(503, f"model not ready ({_state['detail']})")
+    _touch()
     if not prompt.strip():
         raise HTTPException(400, "prompt is required")
     if not images:
