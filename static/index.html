@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QEdit — image edit studio</title>
+<style>
+  :root {
+    --bg:#0d0f14; --panel:#141821; --panel2:#1a1f2b; --border:#262c3a;
+    --text:#e7eaf0; --muted:#8b93a5; --accent:#8b5cf6; --good:#22c55e; --danger:#ef4444;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:13px 22px;
+           border-bottom:1px solid var(--border); position:sticky; top:0;
+           background:rgba(13,15,20,.93); backdrop-filter:blur(8px); z-index:5; }
+  header h1 { font-size:17px; margin:0; letter-spacing:.3px; }
+  header h1 b { color:var(--accent); }
+  #pill { margin-left:auto; font-size:12px; padding:4px 12px; border-radius:999px;
+          border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
+  #pill.loading { color:#f5c66b; border-color:#6b5a25; }
+  #pill.ready { color:var(--good); border-color:#2c5c3c; }
+  #pill.error { color:var(--danger); border-color:#6b2525; }
+  main { display:grid; grid-template-columns:430px minmax(0,1fr); gap:20px;
+         padding:20px 22px; max-width:1560px; margin:0 auto; }
+  @media (max-width:960px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px; }
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.8px;
+          color:var(--muted); margin:14px 0 6px; }
+  #drop { border:1.5px dashed var(--border); border-radius:12px; padding:34px 16px;
+          text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop.over { border-color:var(--accent); color:var(--text); background:rgba(139,92,246,.06); }
+  #drop b { color:var(--text); }
+  #thumbs { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .thumb { position:relative; }
+  .thumb img { width:86px; height:86px; object-fit:cover; border-radius:10px;
+              border:1px solid var(--border); display:block; }
+  .thumb button { position:absolute; top:-7px; right:-7px; width:20px; height:20px; border-radius:50%;
+                 border:none; background:#2a2f3d; color:var(--text); cursor:pointer; font-size:12px; line-height:1; }
+  .thumb button:hover { background:var(--danger); }
+  textarea, input[type=text] { width:100%; background:var(--panel2); color:var(--text);
+         border:1px solid var(--border); border-radius:10px; padding:10px 12px; font:inherit; resize:vertical; }
+  textarea:focus, input[type=text]:focus { outline:none; border-color:var(--accent); }
+  #prompt { min-height:88px; }
+  details { margin-top:14px; }
+  summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  .adv { margin-top:10px; }
+  .row { display:flex; align-items:center; gap:10px; }
+  .row input[type=range] { flex:1; accent-color:var(--accent); }
+  .row .val { width:44px; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #go { width:100%; margin-top:16px; padding:12px; border:none; border-radius:10px;
+        background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  #go:hover:not(:disabled) { filter:brightness(1.1); }
+  #go:disabled { opacity:.45; cursor:not-allowed; }
+  #err { color:var(--danger); margin-top:10px; white-space:pre-wrap; }
+  #stage { color:var(--muted); margin-top:10px; min-height:20px; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--muted);
+         border-top-color:transparent; border-radius:50%; animation:r 1s linear infinite;
+         vertical-align:-2px; margin-right:7px; }
+  @keyframes r { to { transform:rotate(360deg); } }
+  #right { display:flex; flex-direction:column; gap:12px; min-height:60vh; }
+  #empty { flex:1; display:flex; align-items:center; justify-content:center;
+           color:var(--muted); border:1.5px dashed var(--border); border-radius:14px; }
+  #resultCard { display:none; }
+  #resultWrap { background:
+      repeating-conic-gradient(#191e29 0% 25%, #141821 0% 50%) 50%/24px 24px;
+      border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  #result { max-width:100%; max-height:72vh; display:block; }
+  #meta { display:flex; align-items:center; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
+  #meta .seed { font-variant-numeric:tabular-nums; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
+  .btn { background:var(--panel2); color:var(--text); border:1px solid var(--border);
+         border-radius:9px; padding:8px 14px; cursor:pointer; font:inherit; }
+  .btn:hover { border-color:var(--accent); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  #history { display:flex; gap:8px; flex-wrap:wrap; }
+  #history img { width:64px; height:64px; object-fit:cover; border-radius:8px;
+                 border:1px solid var(--border); cursor:pointer; }
+  #history img:hover { border-color:var(--accent); }
+  .hint { color:var(--muted); font-size:11.5px; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>Q</b>Edit</h1>
+  <span style="color:var(--muted);font-size:12px;">Qwen-Image-Edit-2511 · NSFW LoRA</span>
+  <span id="pill" class="loading">connecting…</span>
+</header>
+<main>
+  <section class="card">
+    <div id="drop"><b>Drop image here</b> · click to browse · or paste<br>
+      <span style="font-size:12px;">up to 4 images — the model can combine them</span></div>
+    <input type="file" id="file" accept="image/*" multiple hidden>
+    <div id="thumbs"></div>
+
+    <label for="prompt">Describe your edit</label>
+    <textarea id="prompt" placeholder="e.g. change her outfit to a red dress, keep the face and background the same"></textarea>
+
+    <details>
+      <summary>Advanced</summary>
+      <div class="adv">
+        <label for="neg">Negative prompt</label>
+        <input type="text" id="neg" value=" " placeholder="what to avoid">
+        <label>Steps <span class="hint" style="display:inline;">(40 recommended)</span></label>
+        <div class="row"><input type="range" id="steps" min="8" max="60" step="1" value="40"><span class="val" id="stepsV">40</span></div>
+        <label>CFG (true)</label>
+        <div class="row"><input type="range" id="cfg" min="1" max="8" step="0.5" value="4"><span class="val" id="cfgV">4.0</span></div>
+        <label>LoRA strength</label>
+        <div class="row"><input type="range" id="lora" min="0" max="2" step="0.05" value="1"><span class="val" id="loraV">1.00</span></div>
+        <label for="seed">Seed <span class="hint" style="display:inline;">(blank = random)</span></label>
+        <input type="text" id="seed" placeholder="random">
+      </div>
+    </details>
+
+    <button id="go" disabled>Edit image</button>
+    <div id="stage"></div>
+    <div id="err"></div>
+  </section>
+
+  <section id="right">
+    <div id="empty">results appear here</div>
+    <div class="card" id="resultCard">
+      <div id="resultWrap"><img id="result" alt="result"></div>
+      <div style="margin-top:12px;" class="toolbar">
+        <button class="btn primary" id="dl">Download PNG</button>
+        <button class="btn" id="again">Edit this result</button>
+        <button class="btn" id="compare">Show original</button>
+        <span id="meta" style="margin-left:auto;"></span>
+      </div>
+    </div>
+    <div id="history"></div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let files = [], busy = false, ready = false;
+let history = [];               // [{id, seed, prompt, width, height, took}]
+let shown = null;               // currently displayed history entry
+let compareMode = false;
+
+/* ---------- health ---------- */
+async function refreshHealth() {
+  let j;
+  try { j = await (await fetch('/healthz')).json(); }
+  catch { setPill('loading', 'connecting…'); return; }
+  setPill(j.status, j.status === 'ready'
+      ? 'ready'
+      : `${j.status} — ${j.detail || ''}`);
+  ready = j.status === 'ready';
+  updateGo();
+}
+function setPill(cls, text) {
+  const p = $('#pill');
+  p.className = cls;
+  p.textContent = text.length > 60 ? text.slice(0, 57) + '…' : text;
+}
+refreshHealth();
+setInterval(refreshHealth, 5000);
+
+/* ---------- inputs ---------- */
+const drop = $('#drop');
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+drop.addEventListener('click', () => $('#file').click());
+$('#file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+document.addEventListener('paste', e => {
+  if (e.clipboardData && e.clipboardData.files.length) { addFiles(e.clipboardData.files); }
+});
+
+function addFiles(list) {
+  for (const f of list) {
+    if (!f.type.startsWith('image/')) continue;
+    if (files.length >= 4) break;
+    files.push({ file: f, url: URL.createObjectURL(f) });
+  }
+  renderThumbs(); updateGo();
+}
+function renderThumbs() {
+  const t = $('#thumbs'); t.innerHTML = '';
+  files.forEach((f, i) => {
+    const d = document.createElement('div'); d.className = 'thumb';
+    const img = document.createElement('img'); img.src = f.url;
+    const b = document.createElement('button'); b.textContent = '×';
+    b.onclick = () => { URL.revokeObjectURL(f.url); files.splice(i, 1); renderThumbs(); updateGo(); };
+    d.append(img, b); t.append(d);
+  });
+}
+
+/* ---------- sliders ---------- */
+const bind = (id, vid, fmt) => {
+  $(id).addEventListener('input', () => $(vid).textContent = fmt($(id).value));
+};
+bind('#steps', '#stepsV', v => v);
+bind('#cfg', '#cfgV', v => (+v).toFixed(1));
+bind('#lora', '#loraV', v => (+v).toFixed(2));
+
+/* ---------- generate ---------- */
+function updateGo() { $('#go').disabled = busy || !ready || !files.length; }
+$('#prompt').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') generate();
+});
+$('#go').addEventListener('click', generate);
+
+async function generate() {
+  if (busy || !files.length) return;
+  const prompt = $('#prompt').value.trim();
+  if (!prompt) { $('#err').textContent = 'describe the edit first'; return; }
+  busy = true; updateGo(); $('#err').textContent = '';
+  const fd = new FormData();
+  files.forEach(f => fd.append('images', f.file, 'image.png'));
+  fd.append('prompt', prompt);
+  fd.append('negative_prompt', $('#neg').value);
+  fd.append('steps', $('#steps').value);
+  fd.append('cfg', $('#cfg').value);
+  fd.append('lora_scale', $('#lora').value);
+  const sv = $('#seed').value.trim();
+  fd.append('seed', sv === '' ? '-1' : sv);
+  let timer = null, t0 = performance.now();
+  const stage = (txt) => $('#stage').innerHTML = '<span class="spin"></span>' + txt;
+  stage('uploading…');
+  timer = setInterval(() => stage(`generating… ${Math.round((performance.now() - t0) / 1000)}s`), 1000);
+  try {
+    let r = await fetch('/api/edit', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const { id, seed } = await r.json();
+    $('#seed').value = seed;
+    while (true) {
+      await new Promise(res => setTimeout(res, 2500));
+      r = await fetch('/api/job/' + id);
+      if (!r.ok) throw new Error('job vanished');
+      const j = await r.json();
+      if (j.status === 'done') { showResult({ id, seed: j.seed, prompt, width: j.width, height: j.height, took: j.took, src: 'api' }); break; }
+      if (j.status === 'error') throw new Error(j.error || 'generation failed');
+    }
+  } catch (e) {
+    $('#err').textContent = String(e.message || e);
+  } finally {
+    clearInterval(timer); $('#stage').textContent = '';
+    busy = false; updateGo();
+  }
+}
+
+/* ---------- results ---------- */
+function showResult(entry) {
+  shown = entry; compareMode = false;
+  if (!history.some(h => h.id === entry.id)) {
+    history.unshift(entry);
+    history = history.slice(0, 12);
+    renderHistory();
+  }
+  $('#empty').style.display = 'none';
+  $('#resultCard').style.display = 'block';
+  $('#compare').textContent = 'Show original';
+  $('#result').src = `/api/result/${entry.id}`;
+  $('#meta').innerHTML =
+    `<span>${entry.width}×${entry.height}</span><span>${entry.took}s</span>` +
+    `<span class="seed">seed ${entry.seed}</span>` +
+    `<span class="hint" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${entry.prompt.replace(/</g,'&lt;')}</span>`;
+}
+function renderHistory() {
+  const h = $('#history'); h.innerHTML = '';
+  history.forEach(e => {
+    const img = document.createElement('img');
+    img.src = `/api/result/${e.id}`;
+    img.title = e.prompt;
+    img.onclick = () => showResult(e);
+    h.append(img);
+  });
+}
+$('#compare').addEventListener('click', () => {
+  if (!shown) return;
+  compareMode = !compareMode;
+  if (compareMode && files.length) {
+    $('#result').src = files[0].url;
+    $('#compare').textContent = 'Show result';
+  } else if (compareMode && shown.origUrl) {
+    $('#result').src = shown.origUrl;
+    $('#compare').textContent = 'Show result';
+  } else {
+    compareMode = false;
+    $('#result').src = `/api/result/${shown.id}`;
+    $('#compare').textContent = 'Show original';
+  }
+});
+$('#dl').addEventListener('click', () => {
+  if (!shown) return;
+  const a = document.createElement('a');
+  a.href = `/api/result/${shown.id}`;
+  a.download = `qedit-${shown.seed}.png`;
+  a.click();
+});
+$('#again').addEventListener('click', async () => {
+  if (!shown) return;
+  try {
+    const blob = await (await fetch(`/api/result/${shown.id}`)).blob();
+    files.forEach(f => URL.revokeObjectURL(f.url));
+    files = [{ file: new File([blob], 'result.png', { type: 'image/png' }),
+              url: URL.createObjectURL(blob) }];
+    shown.origUrl = files[0].url;
+    renderThumbs(); updateGo();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    $('#prompt').focus();
+  } catch (e) { $('#err').textContent = String(e.message || e); }
+});
+</script>
+</body>
+</html>
