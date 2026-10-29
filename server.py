@@ -124,7 +124,7 @@ def _run_job(job, images, prompt, negative_prompt, steps, cfg, lora_scale, seed)
                 _pipe.set_adapters(adapter_names, adapter_weights=[lora_scale] * len(adapter_names))
             gen = torch.Generator("cuda").manual_seed(seed)
             t0 = time.time()
-            with torch.inference_mode():
+            with torch.no_grad():
                 out = _pipe(
                     image=images,
                     prompt=prompt,
