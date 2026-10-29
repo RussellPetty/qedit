@@ -84,7 +84,9 @@ def _run_job(job, images, prompt, negative_prompt, steps, cfg, lora_scale, seed)
         job["status"] = "running"
         job["started"] = time.time()
         try:
-            _pipe.set_adapters(["default"], adapter_weights=[lora_scale])
+            adapter_names = sorted({n for names in _pipe.get_list_adapters().values() for n in names})
+            if adapter_names:
+                _pipe.set_adapters(adapter_names, adapter_weights=[lora_scale] * len(adapter_names))
             gen = torch.Generator("cuda").manual_seed(seed)
             t0 = time.time()
             with torch.inference_mode():
