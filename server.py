@@ -84,6 +84,7 @@ def _run_job(job, images, prompt, negative_prompt, steps, cfg, lora_scale, seed)
         job["status"] = "running"
         job["started"] = time.time()
         try:
+            _pipe.set_adapters(["default"], adapter_weights=[lora_scale])
             gen = torch.Generator("cuda").manual_seed(seed)
             t0 = time.time()
             with torch.inference_mode():
@@ -96,7 +97,6 @@ def _run_job(job, images, prompt, negative_prompt, steps, cfg, lora_scale, seed)
                     guidance_scale=1.0,
                     generator=gen,
                     num_images_per_prompt=1,
-                    cross_attention_kwargs={"scale": lora_scale},
                 )
             img = out.images[0]
             buf = io.BytesIO()
